@@ -11,7 +11,7 @@ No dependencies: Python 3.9+ standard library and SQLite (`data/radar.db`).
 
 ## How it works
 
-1. **Collect** from 16 sources in parallel. Each adapter reads the source's own JSON API or the data embedded in its page:
+1. **Collect** from 17 sources in parallel. Each adapter reads the source's own JSON API or the data embedded in its page:
 
    | Source | Method | What it covers |
    |---|---|---|
@@ -31,6 +31,7 @@ No dependencies: Python 3.9+ standard library and SQLite (`data/radar.db`).
    | Kaggle | `CompetitionService/ListCompetitions` gRPC-web JSON endpoint, no account key, paged to the end; only still-open competitions kept | data/ML competitions, big-name prizes |
    | Luma | discover feed (`api.lu.ma/discover/get-paginated-events`), search for `hackathon`, no key | community + big-tech hackathons, online and in person |
    | HackerEarth | own Compete feed (`/api/community/challenges/compete/`); filters are client-side, so open hackathons are picked here. See the IP note in Limits | India-heavy coding events, many student-only |
+   | Eventbrite | directory search API (`/api/v3/destination/search/`) with a CSRF cookie read from the listing page — no user token | community hackathons, online-led |
 
    Zindi, DrivenData, AIcrowd and Kaggle are data/ML competitions: their themes include `data competition`
    (search for it), so they can be shown or filtered.
@@ -84,11 +85,13 @@ Changes apply on the next page load, no rescrape needed.
 - Prize USD uses a fixed approximate FX table for ranking only.
 - One request per second per site. No logins. Requests say who they are:
   `HackathonRadar/1.0 (+https://github.com/tbd-hackathons/hackathon-radar)` (override with `RADAR_USER_AGENT`).
-- **If HackerEarth 403s with "ANONYMOUS IP":** that host rejects datacenter/VPN IPs, and a browser from the
-  same IP gets the same wall. It is a network path problem, not a browser or header one. Send the traffic out
-  a normal interface instead:
-  `RADAR_SOURCE_IP=$(ipconfig getifaddr en0) python3 radar.py scrape`. Unset, HackerEarth shows as
+- **If HackerEarth or Eventbrite 403/405 with "ANONYMOUS IP":** those hosts reject datacenter/VPN IPs, and a
+  browser from the same IP gets the same wall. It is a network path problem, not a browser or header one. Send
+  the traffic out a normal interface instead:
+  `RADAR_SOURCE_IP=$(ipconfig getifaddr en0) python3 radar.py scrape`. Unset, those two sources show as
   blocked-by-site on the Coverage tab and every other source is unaffected.
+- **Eventbrite's search is fuzzy.** Asking it for "hackathon" also returns workshops, talks and meetups, so the
+  adapter keeps only events whose title or summary reads as one.
 - **One disclosed exception to that user agent: DoraHacks.** Its API answers our honest user agent with
   HTTP 405 and the same endpoint with a browser user agent with the public data (checked 10 Oct 2026). So
   `radar/http.py` carries a `HOST_UA` map naming that host and nothing else — the exception is visible in
@@ -97,7 +100,6 @@ Changes apply on the next page load, no rescrape needed.
   ended; ETHGlobal embeds ~340 events (meetups, summits, past) with 1 future hackathon; Taikai has 8 open
   challenges of 278 (the old page read only saw the first 20 and missed one, now fixed via its API).
 - Sources not covered (also listed on the Coverage tab):
-  - **Eventbrite**: the search API needs an OAuth token we do not hold; the public listing returns 405.
   - **Sponsor-run challenges** (Google, AWS, Microsoft, Meta…): own pages, no shared feed. Check by hand.
 
 ## CLI

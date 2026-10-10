@@ -12,7 +12,7 @@ import json
 import re
 from datetime import datetime, timezone
 
-from .http import fetch, fetch_json
+from .http import fetch, fetch_headers, fetch_json
 
 # Approximate FX to USD, used only to rank prizes. Not for money decisions.
 FX = {"USD": 1, "$": 1, "EUR": 1.1, "€": 1.1, "GBP": 1.3, "£": 1.3, "INR": 0.012,
@@ -731,11 +731,86 @@ def hackerearth():
     return out
 
 
+# ---------------------------------------------------------------- Eventbrite
+# The directory's own search API. It rejects a plain call with 401 because it wants a
+# CSRF cookie from the listing page — not a user token, which is what the documented
+# OAuth API needs. Reading the first pages of "hackathon" is enough; the directory is
+# online-led, which suits us.
+EVB_LIST = "https://www.eventbrite.com/d/online/hackathon/"
+EVB_SEARCH = "https://www.eventbrite.com/api/v3/destination/search/"
+EVB_PAGES = 4  # 50 per page; the site reports ~19 pages, we read the first few
+# Eventbrite's search is fuzzy: "hackathon" also returns workshops, talks and meetups
+# (a run pulled in "Mental Health and Homelessness"). Keep only events that read as one.
+HACK_RX = re.compile(r"hack|datathon|buildathon|codefest|hackfest|ideathon", re.I)
+
+
+def _evb_when(date_s, time_s, tzname):
+    """Eventbrite gives a local date, a local time and an IANA zone separately."""
+    if not date_s:
+        return None
+    clock = (time_s or "00:00")[:5]
+    try:
+        from zoneinfo import ZoneInfo
+        return iso(datetime.fromisoformat(f"{date_s}T{clock}:00").replace(tzinfo=ZoneInfo(tzname)))
+    except Exception:
+        return iso(f"{date_s}T{clock}:00")  # no tz data: keep it, slightly off
+
+
+def eventbrite():
+    _, hdrs = fetch_headers(EVB_LIST)
+    m = re.search(r"csrftoken=([^;,\s]+)", hdrs.get("set-cookie", ""))
+    if not m:
+        raise RuntimeError("Eventbrite: listing page gave no csrftoken cookie")
+    tok = m.group(1)
+    headers = {"Cookie": f"csrftoken={tok}", "X-CSRFToken": tok,
+               "Referer": EVB_LIST, "Origin": "https://www.eventbrite.com"}
+    out, seen = Batch(note=f"search API is fuzzy, so results are filtered to hackathon-named events; "
+                           f"the first {EVB_PAGES} pages (of 50) are read"), set()
+    for page in range(1, EVB_PAGES + 1):
+        d = fetch_json(EVB_SEARCH, headers=headers, data={
+            "event_search": {"q": "hackathon", "dates": "current_future",
+                             "page": page, "page_size": 50},
+            "expand.destination_event": ["primary_venue", "ticket_availability", "tags"],
+        })
+        results = (d.get("events") or {}).get("results") or []
+        if not results:
+            break
+        for r in results:
+            eid = r.get("id") or r.get("eventbrite_event_id")
+            if not eid or eid in seen:
+                continue
+            seen.add(eid)
+            if not HACK_RX.search(f"{r.get('name') or ''} {r.get('summary') or ''}"):
+                continue  # not actually a hackathon
+            online = bool(r.get("is_online_event"))
+            city = country = None
+            locs = r.get("locations") or []
+            if locs and isinstance(locs[0], dict):
+                a = locs[0].get("address") or {}
+                if isinstance(a, dict):
+                    city = ", ".join(x for x in (a.get("city"), a.get("region"), a.get("country")) if x)
+                    country = a.get("country")
+            out.append(record(
+                "eventbrite", eid, r.get("name"), r.get("url"),
+                start=_evb_when(r.get("start_date"), r.get("start_time"), r.get("timezone")),
+                end=_evb_when(r.get("end_date"), r.get("end_time"), r.get("timezone")),
+                deadline=_evb_when(r.get("end_date"), r.get("end_time"), r.get("timezone")),
+                format="online" if online else "in-person",
+                location="Online" if online else (city or None), country=country,
+                themes=[t.get("display_name") for t in r.get("tags") or [] if t.get("display_name")],
+                description=r.get("summary") or r.get("full_description") or "",
+                image=(r.get("image") or {}).get("url"),
+                flags={"is_cancelled": bool(r.get("is_cancelled"))} if r.get("is_cancelled") else {},
+            ))
+    return out
+
+
 SOURCES = {
     "devpost": devpost, "devfolio": devfolio, "unstop": unstop, "mlh": mlh,
     "lablab": lablab, "ethglobal": ethglobal, "taikai": taikai, "hackclub": hackclub,
     "dorahacks": dorahacks, "zindi": zindi, "drivendata": drivendata, "aicrowd": aicrowd,
     "hackster": hackster, "kaggle": kaggle, "luma": luma, "hackerearth": hackerearth,
+    "eventbrite": eventbrite,
 }
 
 # Shown on the Coverage page next to each source's numbers.
@@ -756,10 +831,10 @@ SOURCE_NOTES = {
     "kaggle": "Own gRPC-web JSON endpoint, no account needed. Only competitions still open are kept.",
     "luma": "Discover search for 'hackathon', no key needed. Up to ~50 results; the site gives no total.",
     "hackerearth": "Own Compete feed. Filters are client-side, so all challenges are fetched and open hackathons kept. This host blocks datacenter/VPN IPs as 'ANONYMOUS IP'; set RADAR_SOURCE_IP if your traffic exits through one.",
+    "eventbrite": "Directory search API with a CSRF cookie taken from the listing page (no user token). The search is fuzzy, so results are filtered to hackathon-named events; only the first pages are read.",
 }
 
 # Places we know list hackathons but do not collect from, and why.
 NOT_COVERED = [
-    {"source": "eventbrite", "reason": "The search API needs an OAuth token we do not hold; the public listing returns 405 (checked 10 Oct 2026)."},
     {"source": "sponsor-run challenges", "reason": "Google, AWS, Microsoft, Meta etc. run their own pages; no shared feed. Check by hand."},
 ]

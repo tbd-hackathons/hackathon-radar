@@ -75,7 +75,9 @@ def _wait_turn(host: str) -> None:
         time.sleep(due - now)
 
 
-def fetch(url: str, *, data=None, headers=None, timeout=30, retries=2) -> str:
+def fetch_headers(url: str, *, data=None, headers=None, timeout=30, retries=2):
+    """Like fetch(), but returns (body, headers). Headers are lower-cased, so a caller
+    can read Set-Cookie (e.g. Eventbrite's CSRF token, which is not in the page body)."""
     host = ".".join(urllib.parse.urlparse(url).netloc.split(".")[-2:])  # *.devpost.com share one slot
     body = None
     hdrs = {"User-Agent": HOST_UA.get(host, UA), "Accept-Encoding": "gzip",
@@ -94,7 +96,11 @@ def fetch(url: str, *, data=None, headers=None, timeout=30, retries=2) -> str:
                 raw = r.read()
                 if r.headers.get("Content-Encoding") == "gzip":
                     raw = gzip.decompress(raw)
-                return raw.decode("utf-8", "replace")
+                out = {}
+                for k, v in r.headers.items():  # keep every Set-Cookie, not just the last
+                    k = k.lower()
+                    out[k] = f"{out[k]}, {v}" if k in out else v
+                return raw.decode("utf-8", "replace"), out
         except urllib.error.HTTPError as e:
             last = e
             if e.code in (400, 401, 403, 404, 410):
@@ -103,6 +109,10 @@ def fetch(url: str, *, data=None, headers=None, timeout=30, retries=2) -> str:
             last = e
         time.sleep(2 ** attempt)
     raise RuntimeError(f"{url}: {last}")
+
+
+def fetch(url: str, **kw) -> str:
+    return fetch_headers(url, **kw)[0]
 
 
 def fetch_json(url: str, **kw):
