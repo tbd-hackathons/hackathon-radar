@@ -31,7 +31,7 @@ No dependencies: Python 3.9+ standard library and SQLite (`data/radar.db`).
    | Kaggle | `CompetitionService/ListCompetitions` gRPC-web JSON endpoint, no account key, paged to the end; only still-open competitions kept | data/ML competitions, big-name prizes |
    | Luma | discover feed (`api.lu.ma/discover/get-paginated-events`), search for `hackathon`, no key | community + big-tech hackathons, online and in person |
    | HackerEarth | own Compete feed (`/api/community/challenges/compete/`); filters are client-side, so open hackathons are picked here. See the IP note in Limits | India-heavy coding events, many student-only |
-   | Eventbrite | directory search API (`/api/v3/destination/search/`) with a CSRF cookie read from the listing page — no user token | community hackathons, online-led |
+   | Eventbrite | directory search API (`/api/v3/destination/search/`) with a CSRF cookie read from the listing page — no user token. Falls back to the listing page's own embedded results if the API fails | community hackathons, online-led |
 
    Zindi, DrivenData, AIcrowd and Kaggle are data/ML competitions: their themes include `data competition`
    (search for it), so they can be shown or filtered.
@@ -85,13 +85,17 @@ Changes apply on the next page load, no rescrape needed.
 - Prize USD uses a fixed approximate FX table for ranking only.
 - One request per second per site. No logins. Requests say who they are:
   `HackathonRadar/1.0 (+https://github.com/tbd-hackathons/hackathon-radar)` (override with `RADAR_USER_AGENT`).
-- **If HackerEarth or Eventbrite 403/405 with "ANONYMOUS IP":** those hosts reject datacenter/VPN IPs, and a
-  browser from the same IP gets the same wall. It is a network path problem, not a browser or header one. Send
-  the traffic out a normal interface instead:
-  `RADAR_SOURCE_IP=$(ipconfig getifaddr en0) python3 radar.py scrape`. Unset, those two sources show as
-  blocked-by-site on the Coverage tab and every other source is unaffected.
-- **Eventbrite's search is fuzzy.** Asking it for "hackathon" also returns workshops, talks and meetups, so the
-  adapter keeps only events whose title or summary reads as one.
+- **HackerEarth and Eventbrite reject datacenter/VPN IPs** with 403/405 ("ANONYMOUS IP"). A browser from
+  the same IP gets the same wall, so it is a network-path problem, not a browser or header one. The radar now
+  handles this itself: on the first such refusal it finds a physical interface, binds outgoing sockets to it
+  and retries — no setting and no user-agent lie. Override the address, or pin it, with
+  `RADAR_SOURCE_IP=$(ipconfig getifaddr en0)`. If detection finds nothing, that source is reported
+  blocked-by-site and every other source is unaffected.
+- **Eventbrite has two ways in**, so one breaking does not take it down: the directory search API (a CSRF
+  cookie from the listing page, no user token) and, failing that, the results the listing page ships inside
+  `window.__SERVER_DATA__`. Its search is fuzzy — "hackathon" also returns workshops, talks and meetups — so
+  results are filtered to events whose title or summary actually reads as a hackathon. If neither route yields
+  anything readable, the source reports a failure instead of a quiet zero.
 - **One disclosed exception to that user agent: DoraHacks.** Its API answers our honest user agent with
   HTTP 405 and the same endpoint with a browser user agent with the public data (checked 10 Oct 2026). So
   `radar/http.py` carries a `HOST_UA` map naming that host and nothing else — the exception is visible in

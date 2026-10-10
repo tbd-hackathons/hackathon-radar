@@ -5,6 +5,9 @@ import gzip
 import http.client
 import json
 import os
+import re
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -36,19 +39,19 @@ _lock = threading.Lock()
 SOURCE_IP = os.environ.get("RADAR_SOURCE_IP") or None
 
 
-def _build_opener():
-    """A urllib opener that binds to SOURCE_IP, or None to use the default."""
-    if not SOURCE_IP:
+def _build_opener(ip):
+    """A urllib opener that binds outgoing sockets to `ip`, or None when ip is empty."""
+    if not ip:
         return None
 
     class _HTTP(http.client.HTTPConnection):
         def __init__(self, *a, **kw):
-            kw.setdefault("source_address", (SOURCE_IP, 0))
+            kw.setdefault("source_address", (ip, 0))
             super().__init__(*a, **kw)
 
     class _HTTPS(http.client.HTTPSConnection):
         def __init__(self, *a, **kw):
-            kw.setdefault("source_address", (SOURCE_IP, 0))
+            kw.setdefault("source_address", (ip, 0))
             super().__init__(*a, **kw)
 
     class _Handler(urllib.request.HTTPHandler, urllib.request.HTTPSHandler):
@@ -61,7 +64,53 @@ def _build_opener():
     return urllib.request.build_opener(_Handler)
 
 
-_OPENER = _build_opener()
+def _auto_source_ip():
+    """Address of a physical interface, for routing around a VPN exit a site blocks.
+
+    Best effort: no dependency, no privileges, no change unless a request is refused.
+    None means "no idea", and the caller then behaves exactly as it did before.
+    """
+    if sys.platform == "darwin":
+        for iface in ("en0", "en1", "en2"):
+            try:
+                r = subprocess.run(["ipconfig", "getifaddr", iface],
+                                   capture_output=True, text=True, timeout=5)
+            except Exception:
+                continue
+            if r.returncode == 0 and (r.stdout or "").strip():
+                return r.stdout.strip()
+        return None
+    try:  # Linux and friends
+        r = subprocess.run(["ip", "route", "get", "1.1.1.1"],
+                           capture_output=True, text=True, timeout=5)
+        m = re.search(r"\bsrc\s+(\d+\.\d+\.\d+\.\d+)", r.stdout or "")
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+_OPENER = _build_opener(SOURCE_IP)
+_ACTIVE = {"opener": _OPENER}
+_auto_lock = threading.Lock()
+_auto_state = {"done": False}
+
+
+def _reroute_around_block() -> bool:
+    """After a 403/405, bind to the physical interface and keep using it. Once only.
+
+    This is what makes a host that rejects a VPN/datacenter IP work with no env var
+    and no user-agent lie. If detection finds nothing, nothing changes.
+    """
+    with _auto_lock:
+        if _auto_state["done"]:
+            return False
+        _auto_state["done"] = True
+        ip = _auto_source_ip()
+        if not ip:
+            return False
+        _ACTIVE["opener"] = _build_opener(ip)
+        print(f"http: a host refused our IP; routing via {ip} from now on", flush=True)
+        return True
 
 
 def _wait_turn(host: str) -> None:
@@ -91,7 +140,7 @@ def fetch_headers(url: str, *, data=None, headers=None, timeout=30, retries=2):
         _wait_turn(host)
         try:
             req = urllib.request.Request(url, data=body, headers=hdrs)
-            op = _OPENER.open if _OPENER else urllib.request.urlopen
+            op = _ACTIVE["opener"].open if _ACTIVE["opener"] else urllib.request.urlopen
             with op(req, timeout=timeout) as r:
                 raw = r.read()
                 if r.headers.get("Content-Encoding") == "gzip":
@@ -103,6 +152,15 @@ def fetch_headers(url: str, *, data=None, headers=None, timeout=30, retries=2):
                 return raw.decode("utf-8", "replace"), out
         except urllib.error.HTTPError as e:
             last = e
+            # A 403/405 is often an IP wall rather than a bad request. Reroute, then retry if
+            # the route really did change under us. Compare openers rather than trusting a
+            # flag: another thread may have switched routes while this request was in flight,
+            # in which case this one still went out the old way and deserves its retry.
+            if e.code in (403, 405) and SOURCE_IP is None:
+                _reroute_around_block()
+                now = _ACTIVE["opener"].open if _ACTIVE["opener"] else urllib.request.urlopen
+                if now is not op:
+                    continue
             if e.code in (400, 401, 403, 404, 410):
                 break  # retrying will not help
         except Exception as e:  # timeouts, resets

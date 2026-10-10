@@ -732,11 +732,13 @@ def hackerearth():
 
 
 # ---------------------------------------------------------------- Eventbrite
-# The directory's own search API. It rejects a plain call with 401 because it wants a
-# CSRF cookie from the listing page — not a user token, which is what the documented
-# OAuth API needs. Reading the first pages of "hackathon" is enough; the directory is
-# online-led, which suits us.
-EVB_LIST = "https://www.eventbrite.com/d/online/hackathon/"
+# Two independent ways in, so one breaking does not take the source down:
+#   1. the directory's own search API. It rejects a plain call with 401 because it wants a
+#      CSRF cookie from the listing page — not the user token the documented OAuth API needs.
+#   2. the listing page itself, which ships its own results inside `window.__SERVER_DATA__`.
+# No user token either way, and both are filtered the same.
+EVB_LISTS = ("https://www.eventbrite.com/d/online/hackathon/",
+             "https://www.eventbrite.com/d/hackathon/")
 EVB_SEARCH = "https://www.eventbrite.com/api/v3/destination/search/"
 EVB_PAGES = 4  # 50 per page; the site reports ~19 pages, we read the first few
 # Eventbrite's search is fuzzy: "hackathon" also returns workshops, talks and meetups
@@ -756,16 +758,58 @@ def _evb_when(date_s, time_s, tzname):
         return iso(f"{date_s}T{clock}:00")  # no tz data: keep it, slightly off
 
 
-def eventbrite():
-    _, hdrs = fetch_headers(EVB_LIST)
-    m = re.search(r"csrftoken=([^;,\s]+)", hdrs.get("set-cookie", ""))
+def _evb_row(r):
+    """One result. The API and the page's own data use the same field names."""
+    eid = r.get("id") or r.get("eventbrite_event_id")
+    if not eid:
+        return None
+    online = bool(r.get("is_online_event"))
+    city = country = None
+    locs = r.get("locations") or []
+    if locs and isinstance(locs[0], dict):
+        a = locs[0].get("address") or {}
+        if isinstance(a, dict):
+            city = ", ".join(x for x in (a.get("city"), a.get("region"), a.get("country")) if x)
+            country = a.get("country")
+    end = _evb_when(r.get("end_date"), r.get("end_time"), r.get("timezone"))
+    return record(
+        "eventbrite", eid, r.get("name"), r.get("url"),
+        start=_evb_when(r.get("start_date"), r.get("start_time"), r.get("timezone")),
+        end=end, deadline=end,
+        format="online" if online else "in-person",
+        location="Online" if online else (city or None), country=country,
+        themes=[t.get("display_name") for t in r.get("tags") or [] if t.get("display_name")],
+        description=r.get("summary") or r.get("full_description") or "",
+        image=(r.get("image") or {}).get("url"),
+        flags={"is_cancelled": True} if r.get("is_cancelled") else {},
+    )
+
+
+def _evb_add(out, seen, r):
+    if not HACK_RX.search(f"{r.get('name') or ''} {r.get('summary') or ''}"):
+        return  # not actually a hackathon
+    row = _evb_row(r)
+    if row and row["id"] not in seen:
+        seen.add(row["id"])
+        out.append(row)
+
+
+def _evb_embedded(html):
+    """Fallback: the listing page carries its own search results in __SERVER_DATA__."""
+    m = re.search(r"window\.__SERVER_DATA__\s*=\s*(\{.*?\})\s*(?:;\s*window\.|</script>)", html, re.S)
     if not m:
-        raise RuntimeError("Eventbrite: listing page gave no csrftoken cookie")
-    tok = m.group(1)
+        return []
+    try:
+        d = json.loads(m.group(1))
+    except ValueError:
+        return []
+    return ((d.get("search_data") or {}).get("events") or {}).get("results") or []
+
+
+def _evb_via_api(out, seen, tok, list_url):
     headers = {"Cookie": f"csrftoken={tok}", "X-CSRFToken": tok,
-               "Referer": EVB_LIST, "Origin": "https://www.eventbrite.com"}
-    out, seen = Batch(note=f"search API is fuzzy, so results are filtered to hackathon-named events; "
-                           f"the first {EVB_PAGES} pages (of 50) are read"), set()
+               "Referer": list_url, "Origin": "https://www.eventbrite.com"}
+    raw = 0
     for page in range(1, EVB_PAGES + 1):
         d = fetch_json(EVB_SEARCH, headers=headers, data={
             "event_search": {"q": "hackathon", "dates": "current_future",
@@ -775,33 +819,43 @@ def eventbrite():
         results = (d.get("events") or {}).get("results") or []
         if not results:
             break
+        raw += len(results)
         for r in results:
-            eid = r.get("id") or r.get("eventbrite_event_id")
-            if not eid or eid in seen:
-                continue
-            seen.add(eid)
-            if not HACK_RX.search(f"{r.get('name') or ''} {r.get('summary') or ''}"):
-                continue  # not actually a hackathon
-            online = bool(r.get("is_online_event"))
-            city = country = None
-            locs = r.get("locations") or []
-            if locs and isinstance(locs[0], dict):
-                a = locs[0].get("address") or {}
-                if isinstance(a, dict):
-                    city = ", ".join(x for x in (a.get("city"), a.get("region"), a.get("country")) if x)
-                    country = a.get("country")
-            out.append(record(
-                "eventbrite", eid, r.get("name"), r.get("url"),
-                start=_evb_when(r.get("start_date"), r.get("start_time"), r.get("timezone")),
-                end=_evb_when(r.get("end_date"), r.get("end_time"), r.get("timezone")),
-                deadline=_evb_when(r.get("end_date"), r.get("end_time"), r.get("timezone")),
-                format="online" if online else "in-person",
-                location="Online" if online else (city or None), country=country,
-                themes=[t.get("display_name") for t in r.get("tags") or [] if t.get("display_name")],
-                description=r.get("summary") or r.get("full_description") or "",
-                image=(r.get("image") or {}).get("url"),
-                flags={"is_cancelled": bool(r.get("is_cancelled"))} if r.get("is_cancelled") else {},
-            ))
+            _evb_add(out, seen, r)
+    return raw
+
+
+def eventbrite():
+    out, seen = Batch(note="search is fuzzy, so results are filtered to hackathon-named events"), set()
+    html, tok, list_url = "", "", EVB_LISTS[0]
+    for url in EVB_LISTS:
+        try:
+            html, hdrs = fetch_headers(url)
+        except Exception:
+            continue  # try the next listing URL
+        list_url = url
+        m = re.search(r"csrftoken=([^;,\s]+)", hdrs.get("set-cookie", ""))
+        if m:
+            tok = m.group(1)
+            break
+    raw = 0
+    if tok:
+        try:
+            raw += _evb_via_api(out, seen, tok, list_url)
+        except Exception:
+            out.clear()  # token went stale or the API moved: use the page we already hold
+    if not out and html:
+        embedded = _evb_embedded(html)
+        if embedded:
+            out.note += "; API unavailable, read the listing page's own data"
+        raw += len(embedded)
+        for r in embedded:
+            _evb_add(out, seen, r)
+    if not html:
+        raise RuntimeError("Eventbrite: could not load any listing page")
+    if raw == 0:
+        # Nothing parsed from either route: report it rather than look like a quiet zero.
+        raise RuntimeError("Eventbrite: neither the API nor the page yielded results (layout change?)")
     return out
 
 
