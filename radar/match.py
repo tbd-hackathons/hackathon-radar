@@ -202,4 +202,7 @@ def score(h: dict, profile: dict, enrich: dict | None = None) -> dict:
         tier = "skip"
     return {"score": total, "tier": tier, "parts": {"reach": reach, "theme": round(theme, 1),
             "edge": round(edge, 1), "prize": round(prize, 1), "timing": timing, "team": team},
+            # The effective pool, which may have come from the page rather than the listing.
+            # Without this the score says "Prize pool ≈ US$100,000" while the field reads None.
+            "prize_usd": usd,
             "reasons": reasons, "blockers": blockers, "warnings": warnings, "days_left": days}
