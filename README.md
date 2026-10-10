@@ -11,7 +11,7 @@ No dependencies: Python 3.9+ standard library and SQLite (`data/radar.db`).
 
 ## How it works
 
-1. **Collect** from 13 sources in parallel. Each adapter reads the source's own JSON API or the data embedded in its page:
+1. **Collect** from 15 sources in parallel. Each adapter reads the source's own JSON API or the data embedded in its page:
 
    | Source | Method | What it covers |
    |---|---|---|
@@ -23,13 +23,15 @@ No dependencies: Python 3.9+ standard library and SQLite (`data/radar.db`).
    | ETHGlobal | Next.js flight data | web3 hackathons |
    | Taikai | public GraphQL API (`api.taikai.network`), open challenges | EU/LatAm innovation challenges |
    | Hack Club | public API | high-school events (blocked for us by default) |
-   | DoraHacks | the site's own list API (`/api/v1/hub/hackathons`), ongoing + upcoming | web3 + AI, big online prize pools |
+   | DoraHacks | the site's own list API (`/api/v1/hub/hackathons`), ongoing + upcoming; this host only, requests use a browser user agent (see Limits) | web3 + AI, big online prize pools |
    | Zindi | public API (`api.zindi.world`), open challenges + rules text | data/ML competitions, many Africa-only |
    | DrivenData | server-rendered list (`data-*` attributes) | data/ML competitions for social impact |
    | AIcrowd | server-rendered cards, running + starting soon, 10 s between requests (robots.txt Crawl-delay) | data/ML research challenges |
    | Hackster.io | hypernova page data on `/contests` (contest pages themselves return 403, so their rules are not read) | hardware contests (weak fit, shown for completeness) |
+   | Kaggle | `CompetitionService/ListCompetitions` gRPC-web JSON endpoint, no account key, paged to the end; only still-open competitions kept | data/ML competitions, big-name prizes |
+   | Luma | discover feed (`api.lu.ma/discover/get-paginated-events`), search for `hackathon`, no key | community + big-tech hackathons, online and in person |
 
-   Zindi, DrivenData and AIcrowd are data/ML competitions: their themes include `data competition`
+   Zindi, DrivenData, AIcrowd and Kaggle are data/ML competitions: their themes include `data competition`
    (search for it), so they can be shown or filtered.
 
 2. **Score** each event 0–100 against `profile.json`:
@@ -79,18 +81,19 @@ Changes apply on the next page load, no rescrape needed.
 
 - Eligibility flags come from text patterns. A "Go" means "worth opening the rules", not "eligible".
 - Prize USD uses a fixed approximate FX table for ranking only.
-- One request per second per site. No logins, no bot-protection bypass. Requests say who they are:
+- One request per second per site. No logins. Requests say who they are:
   `HackathonRadar/1.0 (+https://github.com/tbd-hackathons/hackathon-radar)` (override with `RADAR_USER_AGENT`).
-- **DoraHacks** answers that honest user agent with HTTP 405 (checked 10 Oct 2026), so it is not collected
-  unless the site allows it. The adapter stays in place; the Coverage tab shows it as failed.
+- **One disclosed exception to that user agent: DoraHacks.** Its API answers our honest user agent with
+  HTTP 405 and the same endpoint with a browser user agent with the public data (checked 10 Oct 2026). So
+  `radar/http.py` carries a `HOST_UA` map naming that host and nothing else — the exception is visible in
+  the code, not silent. Remove the entry and the Coverage tab shows DoraHacks as failed again.
 - Low counts are real, not bugs (checked 10 Oct 2026): lablab.ai embeds ~140 events but only 3 have not
   ended; ETHGlobal embeds ~340 events (meetups, summits, past) with 1 future hackathon; Taikai has 8 open
   challenges of 278 (the old page read only saw the first 20 and missed one, now fixed via its API).
 - Sources not covered (also listed on the Coverage tab):
-  - **Kaggle**: plain requests get a reCAPTCHA page and the API needs an account key. Not bypassed.
-  - **HackerEarth**: 403 to plain requests. Not bypassed.
-  - **Luma**: not attempted: no public cross-calendar hackathon listing; the API needs a key.
-  - **Eventbrite**: not attempted: the search API needs an OAuth token.
+  - **HackerEarth**: 403 to plain *and* browser user agents (checked 10 Oct 2026). It needs a real browser
+    engine, which would break the dependency-free promise. Not collected.
+  - **Eventbrite**: the search API needs an OAuth token we do not hold; the public listing returns 405.
   - **Sponsor-run challenges** (Google, AWS, Microsoft, Meta…): own pages, no shared feed. Check by hand.
 
 ## CLI

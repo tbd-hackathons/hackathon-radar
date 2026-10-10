@@ -601,11 +601,108 @@ def hackster():
     return out
 
 
+# ---------------------------------------------------------------- Kaggle
+# Kaggle's own gRPC-web JSON endpoint (the /competitions page calls it). Reachable
+# without an account. Its list is every competition ever, so only ones that are
+# still open (deadline in the future) or have no deadline are kept.
+KAGGLE = "https://www.kaggle.com/api/i/competitions.CompetitionService/ListCompetitions"
+
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def kaggle():
+    out, seen, token, pages = Batch(), set(), "", 0
+    while pages < 12:
+        body = {"pageSize": 100}
+        if token:
+            body["pageToken"] = token
+        d = fetch_json(KAGGLE, data=body)
+        cs = d.get("competitions") or []
+        if not cs:
+            break
+        for c in cs:
+            cid = c.get("id")
+            if cid in seen:
+                continue
+            seen.add(cid)
+            due = iso(c.get("deadline"))
+            if due and (due < _utcnow() or due > "2035"):
+                continue  # ended, or an endlessly-running benchmark
+            rew = c.get("reward") or {}
+            qty = rew.get("quantity")
+            cur = (rew.get("id") or "USD").upper()
+            usd = qty * FX.get(cur, 1) if qty else None
+            cats = [x.get("displayName") for x in c.get("categories") or [] if x.get("displayName")]
+            out.append(record(
+                "kaggle", cid, c.get("title"),
+                f"https://www.kaggle.com/competitions/{c.get('competitionName')}",
+                organizer=(c.get("organization") or {}).get("name") or c.get("hostName") or "Kaggle",
+                start=iso(c.get("dateEnabled")), end=due, deadline=due,
+                format="online", location="Online",
+                prize_usd=usd, prize_text=f"{cur} {qty:,.0f}" if qty else None,
+                themes=["data competition", "machine learning"] + cats,
+                description=c.get("briefDescription") or "",
+                team_max=c.get("maxTeamSize"),
+                participants=c.get("totalTeams") or c.get("totalCompetitors"),
+                flags={"data_competition": True},
+            ))
+        token = d.get("nextPageToken")
+        if not token:
+            break
+        pages += 1
+    out.expected = len(out)
+    out.note = "expected = open competitions in Kaggle's list"
+    return out
+
+
+# ---------------------------------------------------------------- Luma
+# Luma's discover feed (the luma.com/discover page calls it). No key needed. There
+# is no cross-calendar hackathon listing, but this search answers "hackathon".
+LUMA = "https://api.lu.ma/discover/get-paginated-events"
+
+
+def luma():
+    out, seen = Batch(note="Luma discover search 'hackathon'; the site gives no total"), set()
+    cursor = ""
+    for _ in range(6):
+        url = f"{LUMA}?pagination_limit=50&query=hackathon"
+        if cursor:
+            url += f"&pagination_cursor={cursor}"
+        d = fetch_json(url)
+        for e in d.get("entries") or []:
+            ev = e.get("event") or {}
+            aid = ev.get("api_id")
+            if not aid or aid in seen:
+                continue
+            seen.add(aid)
+            geo = ev.get("geo_address_info") or {}
+            loc = ", ".join(x for x in (geo.get("city"), geo.get("region"), geo.get("country")) if x) \
+                or geo.get("address")
+            lt = (ev.get("location_type") or "").lower()
+            addr = (geo.get("address") or "").lower()
+            fmt = "online" if lt == "online" or addr == "online" else \
+                "in-person" if lt == "offline" else "unknown"
+            out.append(record(
+                "luma", aid, ev.get("name"), f"https://lu.ma/{ev.get('url')}",
+                organizer=(e.get("calendar") or {}).get("name"),
+                start=iso(ev.get("start_at")), end=iso(ev.get("end_at")), deadline=iso(ev.get("end_at")),
+                format=fmt, location=loc, country=geo.get("country"),
+                themes=["hackathon"], description=(e.get("calendar") or {}).get("description_short") or "",
+                participants=e.get("guest_count"), image=ev.get("cover_url"),
+            ))
+        cursor = d.get("next_cursor") or ""
+        if not d.get("has_more") or not cursor:
+            break
+    return out
+
+
 SOURCES = {
     "devpost": devpost, "devfolio": devfolio, "unstop": unstop, "mlh": mlh,
     "lablab": lablab, "ethglobal": ethglobal, "taikai": taikai, "hackclub": hackclub,
     "dorahacks": dorahacks, "zindi": zindi, "drivendata": drivendata, "aicrowd": aicrowd,
-    "hackster": hackster,
+    "hackster": hackster, "kaggle": kaggle, "luma": luma,
 }
 
 # Shown on the Coverage page next to each source's numbers.
@@ -623,13 +720,13 @@ SOURCE_NOTES = {
     "drivendata": "Server-rendered list; includes long-running practice competitions.",
     "aicrowd": "Server-rendered list, running + starting soon. Crawl-delay 10 s respected.",
     "hackster": "Hypernova page data; hardware contests. Site gives no total. Contest pages return 403, so rules are not read.",
+    "kaggle": "Own gRPC-web JSON endpoint, no account needed. Only competitions still open are kept.",
+    "luma": "Discover search for 'hackathon', no key needed. Up to ~50 results; the site gives no total.",
 }
 
 # Places we know list hackathons but do not collect from, and why.
 NOT_COVERED = [
-    {"source": "kaggle", "reason": "Plain requests get a reCAPTCHA page; the API needs an account key. Not bypassed."},
-    {"source": "hackerearth", "reason": "Returned 403 to plain requests (earlier check). Not bypassed."},
-    {"source": "luma", "reason": "Not attempted: no public cross-calendar hackathon listing; the API needs a key."},
-    {"source": "eventbrite", "reason": "Not attempted: the search API needs an OAuth token."},
+    {"source": "hackerearth", "reason": "Returned 403 to plain and to browser user agents (checked 10 Oct 2026); it needs a real browser engine, and the radar stays dependency-free, so it is not collected."},
+    {"source": "eventbrite", "reason": "The search API needs an OAuth token we do not hold; the public listing returns 405 (checked 10 Oct 2026)."},
     {"source": "sponsor-run challenges", "reason": "Google, AWS, Microsoft, Meta etc. run their own pages; no shared feed. Check by hand."},
 ]

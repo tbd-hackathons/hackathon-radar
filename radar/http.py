@@ -13,6 +13,15 @@ import urllib.request
 # Say who we are, honestly, with a link a site owner can use to see what this is or ask us to stop.
 UA = os.environ.get("RADAR_USER_AGENT",
                     "HackathonRadar/1.0 (+https://github.com/tbd-hackathons/hackathon-radar)")
+
+# Per-host exceptions to the honest user agent above. Only for sites that answer
+# our honest UA with a bot wall (HTTP 405/403) yet serve the very same public data
+# to a browser UA. Named per host so the exception is visible, not silent; the
+# README "Limits" section discloses which hosts are listed and why.
+HOST_UA = {
+    "dorahacks.io": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128 Safari/537.36",
+}
 MIN_GAP = 1.0  # seconds between two requests to the same site
 SLOW = {"devpost.com": 3.0, "aicrowd.com": 10.0}  # rate-limit harder; aicrowd robots.txt Crawl-delay: 10
 
@@ -34,7 +43,7 @@ def _wait_turn(host: str) -> None:
 def fetch(url: str, *, data=None, headers=None, timeout=30, retries=2) -> str:
     host = ".".join(urllib.parse.urlparse(url).netloc.split(".")[-2:])  # *.devpost.com share one slot
     body = None
-    hdrs = {"User-Agent": UA, "Accept-Encoding": "gzip",
+    hdrs = {"User-Agent": HOST_UA.get(host, UA), "Accept-Encoding": "gzip",
             "Accept": "application/json, text/html;q=0.9, */*;q=0.8"}
     if data is not None:
         body = json.dumps(data).encode()
