@@ -1,0 +1,17 @@
+{
+  "goal_usd": 10000,
+  "goal_date": "2027-03-31",
+  "won_usd": 0,
+  "entries": [
+    {
+      "id": "devpost:12345",
+      "title": "Example Hackathon",
+      "url": "https://example.devpost.com/",
+      "stage": "registered",
+      "deadline": "2026-12-01T23:59:00Z",
+      "top_prize_usd": null,
+      "next_step": "Read the rules and decide",
+      "note": ""
+    }
+  ]
+}

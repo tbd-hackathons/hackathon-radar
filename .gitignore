@@ -1,0 +1,7 @@
+data/
+__pycache__/
+*.pyc
+.DS_Store
+.claude/
+# Your own progress list. pipeline.example.json shows the shape.
+pipeline.json

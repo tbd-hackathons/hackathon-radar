@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hackathon Radar</title>
+<style>
+:root{
+  --bg:#f6f7f9;--panel:#fff;--ink:#14171c;--muted:#5d6673;--line:#e3e6eb;
+  --go:#127a4b;--go-bg:#e4f5ec;--maybe:#8a5a00;--maybe-bg:#fdf1d8;--skip:#5d6673;--skip-bg:#eef0f3;
+  --bad:#b42318;--bad-bg:#fde8e6;--accent:#2445d6;--accent-bg:#e8edff;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1115;--panel:#171a21;--ink:#e8ebf0;--muted:#97a0ad;--line:#272c36;
+  --go:#4cc98a;--go-bg:#12301f;--maybe:#e8b04a;--maybe-bg:#33270e;--skip:#97a0ad;--skip-bg:#222630;
+  --bad:#f0857a;--bad-bg:#3a1714;--accent:#8ea2ff;--accent-bg:#1d2340;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:24px 16px 64px}
+header{display:flex;gap:16px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap}
+h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:13px}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:8px 14px;border-radius:8px;font:inherit;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:.55;cursor:default}
+.health{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 4px}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;font-size:12px;background:var(--skip-bg);color:var(--muted);white-space:nowrap}
+.chip.err{background:var(--bad-bg);color:var(--bad)}
+.statusbar{margin:12px 0;padding:10px 12px;border-radius:8px;background:var(--accent-bg);color:var(--accent);font-size:13px;display:none}
+.tabs{display:flex;gap:4px;margin:18px 0 10px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tab{padding:8px 12px;border:0;background:none;color:var(--muted);font:inherit;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap}
+.tab.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:600}
+.tab .n{font-size:12px;color:var(--muted);margin-left:4px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.filters input,.filters select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);font:inherit}
+.filters input[type=search]{flex:1;min-width:200px}
+.filters label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+.list{display:flex;flex-direction:column;gap:8px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:52px 1fr auto;gap:14px;align-items:start}
+.card.dim{opacity:.55}
+.score{width:52px;height:52px;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:700;font-size:19px;font-variant-numeric:tabular-nums}
+.score small{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.t-go{background:var(--go-bg);color:var(--go)}.t-maybe{background:var(--maybe-bg);color:var(--maybe)}
+.t-skip{background:var(--skip-bg);color:var(--skip)}.t-blocked{background:var(--bad-bg);color:var(--bad)}
+.title{font-weight:600;font-size:15px;color:var(--ink);text-decoration:none}
+.title:hover{text-decoration:underline}
+.meta{color:var(--muted);font-size:13px;margin-top:2px;display:flex;flex-wrap:wrap;gap:4px 14px}
+.meta b{color:var(--ink);font-weight:500}
+.reasons{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.r-good{background:var(--go-bg);color:var(--go)}.r-bad{background:var(--bad-bg);color:var(--bad)}
+.r-warn{background:var(--maybe-bg);color:var(--maybe)}.r-new{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.actions{display:flex;flex-direction:column;gap:6px}
+.actions button{border:1px solid var(--line);background:none;color:var(--muted);border-radius:7px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
+.actions button.on{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+details{margin-top:8px}
+summary{cursor:pointer;color:var(--accent);font-size:12px}
+.bars{display:grid;grid-template-columns:70px 1fr 40px;gap:4px 10px;align-items:center;margin:10px 0 6px;font-size:12px;color:var(--muted);max-width:420px}
+.bar{height:6px;background:var(--skip-bg);border-radius:3px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent)}
+.why{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:12px}
+.ev{font-size:12px;color:var(--muted);border-left:2px solid var(--line);padding-left:8px;margin:6px 0}
+.ev b{color:var(--ink);font-weight:600}
+.empty{padding:40px;text-align:center;color:var(--muted);background:var(--panel);border:1px dashed var(--line);border-radius:10px}
+.goal{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
+.goal .k{font-size:12px;color:var(--muted)}.goal .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.steps{display:flex;gap:3px;margin:10px 0 4px}.steps i{flex:1;height:5px;border-radius:3px;background:var(--skip-bg)}.steps i.on{background:var(--go)}
+.stagelbl{font-size:12px;color:var(--muted)}
+.next{margin-top:8px;font-size:13px}.next b{font-weight:600}
+.due{font-weight:700;font-size:18px;font-variant-numeric:tabular-nums;text-align:right}.due small{display:block;font-size:11px;font-weight:500;color:var(--muted)}
+.due.hot{color:var(--bad)}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:1fr auto;gap:14px}
+.pcard select{padding:4px 8px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--ink);font:inherit;font-size:12px;margin-top:6px}
+.tblwrap{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th,.tbl td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.tbl th{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap}
+.tbl tr:last-child td{border-bottom:0}
+.tbl td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.tbl td.note{color:var(--muted);font-size:12px;min-width:220px}
+.tbl tr.nc td{color:var(--muted)}
+.tbl .mini{height:4px;background:var(--skip-bg);border-radius:2px;overflow:hidden;margin-top:4px;width:90px}.tbl .mini i{display:block;height:100%;background:var(--go)}
+.covsum{color:var(--muted);font-size:13px;margin:0 0 10px}
+.tbl .k{font-size:11px;color:var(--muted);font-weight:400}
+@media (max-width:640px){.card{grid-template-columns:44px 1fr}.score{width:44px;height:44px;font-size:16px}.actions{grid-column:1/-1;flex-direction:row}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Hackathon Radar</h1>
+      <div class="sub" id="sub">Loading…</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <a class="btn" id="csv" href="/api/export.csv?tiers=go,maybe">Export CSV</a>
+      <button class="btn primary" id="refresh">Refresh now</button>
+    </div>
+  </header>
+  <div class="health" id="health"></div>
+  <div class="statusbar" id="statusbar"></div>
+  <nav class="tabs" id="tabs"></nav>
+  <div class="filters">
+    <input type="search" id="q" placeholder="Search title, organiser, theme, place">
+    <select id="fmt"><option value="">Any format</option><option value="online">Online</option><option value="hybrid">Hybrid</option><option value="in-person">In person</option></select>
+    <select id="src"><option value="">All sources</option></select>
+    <select id="sort"><option value="score">Best fit</option><option value="deadline">Closing soonest</option><option value="prize">Biggest prize</option></select>
+    <label><input type="checkbox" id="hideDismissed" checked> Hide dismissed</label>
+  </div>
+  <div class="list" id="list"></div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const TIERS = [["progress","My progress"],["go","Go"],["maybe","Maybe"],["skip","Skip"],["blocked","Blocked"],["shortlist","Shortlist"],["applied","Applied"],["all","All"],["coverage","Coverage"]];
+const BLOCK = {students_only:"Students only",high_school:"High-school event",invite_only:"Invite / selected only",
+  country_excludes_home:"Indonesia not eligible",ai_banned:"AI tools banned",too_late:"Too late to enter"};
+const WARN = {women_only:"Women-only event",paid_entry:"Paid entry",team_min_over_1:"Needs a human teammate",india_platform:"India platform: check payout",
+  id_investing_conflict:"Indonesian investing product: check conflict of interest"};
+const FLAG = {...BLOCK, solo_allowed:"Solo allowed", ai_allowed:"AI tools allowed", home_mentioned:"Mentions Indonesia"};
+let DATA = [], PIPE = null, COV = null, tab = "progress", pollT = null;
+try { tab = localStorage.getItem("radar.tab") || "progress"; } catch (e) {}
+
+const MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const fmtDate = s => { if (!s) return "Not stated"; const d = new Date(s); return `${String(d.getDate()).padStart(2,"0")} ${MON[d.getMonth()]} ${d.getFullYear()}`; };
+const fmtDateTime = s => { if (!s) return "Never"; const d = new Date(s); return `${fmtDate(s)} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const money = v => v ? "≈ US$" + Math.round(v).toLocaleString("en-US") : "Prize not stated";
+
+async function load() {
+  const [r, rp] = await Promise.all([fetch("/api/hackathons"), fetch("/api/pipeline")]);
+  const d = await r.json(); PIPE = await rp.json();
+  DATA = d.items;
+  try { const rc = await fetch("/api/coverage"); COV = rc.ok ? await rc.json() : {error: "Coverage needs a server restart"}; }
+  catch (e) { COV = {error: "Coverage could not load"}; }
+  const lr = d.last_run;
+  $("#sub").textContent = lr
+    ? `Matched to Fury + AI agents · ${DATA.length} open events · last run ${fmtDate(lr.finished)} ${new Date(lr.finished).toTimeString().slice(0,5)}`
+    : "First run in progress…";
+  const st = (lr && lr.stats) || {};
+  $("#health").innerHTML = Object.entries(st).filter(([k]) => !k.startsWith("_")).map(([k, v]) =>
+    `<span class="chip ${v.error ? "err" : ""}" title="${esc(v.error || v.secs + "s")}">${k} ${v.error ? "failed" : v.count}</span>`).join("")
+    + (st._pages_read != null ? `<span class="chip">pages read this run ${st._pages_read}</span>` : "");
+  const srcs = [...new Set(DATA.map(h => h.source))].sort();
+  const cur = $("#src").value;
+  $("#src").innerHTML = `<option value="">All sources</option>` + srcs.map(s => `<option ${s===cur?"selected":""}>${s}</option>`).join("");
+  showStatus(d.status);
+  render();
+}
+
+function inTab(h) {
+  if (tab === "all") return true;
+  if (tab === "shortlist" || tab === "applied") return h.mark === tab;
+  return h.tier === tab;
+}
+
+function render() {
+  const q = $("#q").value.toLowerCase().trim(), fmt = $("#fmt").value, src = $("#src").value, hide = $("#hideDismissed").checked;
+  const base = DATA.filter(h => (!fmt || h.format === fmt) && (!src || h.source === src) && (!hide || h.mark !== "dismissed")
+    && (!q || [h.title, h.organizer, h.location, ...(h.themes||[])].join(" ").toLowerCase().includes(q)));
+  $("#tabs").innerHTML = TIERS.map(([k, label]) => {
+    if (k === "progress") return `<button class="tab ${k===tab?"on":""}" data-tab="${k}">${label}<span class="n">${PIPE ? PIPE.entries.length : 0}</span></button>`;
+    if (k === "coverage") { const live = COV && COV.rows ? COV.rows.filter(x => x.covered) : [];
+      return `<button class="tab ${k===tab?"on":""}" data-tab="${k}">${label}<span class="n">${live.filter(x => x.status === "ok").length}/${live.length}</span></button>`; }
+    const n = base.filter(h => k === "all" || (k === "shortlist" || k === "applied" ? h.mark === k : h.tier === k)).length;
+    return `<button class="tab ${k===tab?"on":""}" data-tab="${k}">${label}<span class="n">${n}</span></button>`;
+  }).join("");
+  document.querySelector(".filters").style.display = tab === "progress" || tab === "coverage" ? "none" : "flex";
+  if (tab === "progress") { $("#list").innerHTML = progressView(); return; }
+  if (tab === "coverage") { $("#list").innerHTML = coverageView(); return; }
+  let rows = base.filter(inTab);
+  const s = $("#sort").value;
+  if (s === "deadline") rows.sort((a, b) => (a.days_left ?? 1e9) - (b.days_left ?? 1e9));
+  if (s === "prize") rows.sort((a, b) => (b.prize_usd || 0) - (a.prize_usd || 0));
+  $("#list").innerHTML = rows.length ? rows.map(card).join("") :
+    `<div class="empty">Nothing here with these filters.</div>`;
+}
+
+const STAGE_LABEL = {watching:"Watching",shortlisted:"Shortlisted",registered:"Registered",building:"Building",submitted:"Submitted",won:"Won",lost:"Not placed"};
+function progressView() {
+  if (!PIPE) return `<div class="empty">Loading…</div>`;
+  const now = Date.now(), DAY = 864e5;
+  const daysTo = s => s ? (new Date(s) - now) / DAY : null;
+  const order = {building:0,registered:1,shortlisted:2,watching:3,submitted:4,won:5,lost:6};
+  const rows = [...PIPE.entries].sort((a, b) => (order[a.stage] - order[b.stage]) || ((daysTo(a.deadline) ?? 1e9) - (daysTo(b.deadline) ?? 1e9)));
+  const active = rows.filter(e => !["won","lost"].includes(e.stage));
+  const pools = active.reduce((t, e) => t + (e.pool_usd || 0), 0);
+  const nextDue = active.filter(e => daysTo(e.deadline) > 0).sort((a, b) => daysTo(a.deadline) - daysTo(b.deadline))[0];
+  const goalDays = Math.round(daysTo(PIPE.goal_date + "T23:59:59+07:00"));
+  const pct = Math.min(100, PIPE.won_usd / PIPE.goal_usd * 100);
+  const head = `<div class="goal">
+    <div><div class="k">Won so far</div><div class="v">US$${PIPE.won_usd.toLocaleString("en-US")}</div>
+      <div class="bar" style="margin-top:6px"><i style="width:${pct}%"></i></div><div class="k" style="margin-top:4px">of US$${PIPE.goal_usd.toLocaleString("en-US")} goal · ${goalDays} days to ${fmtDate(PIPE.goal_date)}</div></div>
+    <div><div class="k">In play</div><div class="v">${active.length}</div><div class="k">${rows.filter(e=>e.stage==="building").length} building · ${rows.filter(e=>e.stage==="registered").length} registered</div></div>
+    <div><div class="k">Prize pools in play</div><div class="v">${pools ? "US$" + Math.round(pools).toLocaleString("en-US") : "—"}</div><div class="k">Total pools, not our share</div></div>
+    <div><div class="k">Next deadline</div><div class="v">${nextDue ? Math.ceil(daysTo(nextDue.deadline)) + " days" : "—"}</div><div class="k">${nextDue ? esc(nextDue.title) : ""}</div></div>
+  </div>`;
+  const prog = ["registered","building","submitted","won"];
+  return head + rows.map(e => {
+    const d = daysTo(e.deadline), lvl = prog.indexOf(e.stage);
+    const due = e.deadline ? `<div class="due ${d < 7 && d > 0 && !["submitted","won","lost"].includes(e.stage) ? "hot" : ""}">${d < 0 ? "Closed" : Math.ceil(d) + "d"}<small>${fmtDate(e.deadline)}</small></div>` : `<div class="due">—<small>No date yet</small></div>`;
+    return `<div class="pcard"><div>
+      ${e.url ? `<a class="title" href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title)}</a>` : `<span class="title">${esc(e.title)}</span>`}
+      <div class="meta"><span><b>${STAGE_LABEL[e.stage]}</b></span>${e.pool_usd ? `<span>Pool ${money(e.pool_usd)}</span>` : ""}${e.top_prize_usd ? `<span>1st prize US$${e.top_prize_usd.toLocaleString("en-US")}</span>` : ""}${e.score != null ? `<span>Fit ${e.score}/100</span>` : ""}</div>
+      <div class="steps">${prog.map((p, i) => `<i class="${lvl >= i ? "on" : ""}" title="${STAGE_LABEL[p]}"></i>`).join("")}</div>
+      <div class="stagelbl">Registered → Building → Submitted → Won</div>
+      ${e.next_step ? `<div class="next"><b>Next:</b> ${esc(e.next_step)}</div>` : ""}
+      ${e.note ? `<div class="ev">${esc(e.note)}</div>` : ""}
+      <select data-stage="${esc(e.id)}">${PIPE.stages.map(s => `<option value="${s}" ${s===e.stage?"selected":""}>${STAGE_LABEL[s]}</option>`).join("")}</select>
+    </div>${due}</div>`;
+  }).join("");
+}
+document.addEventListener("change", async e => {
+  const sel = e.target.closest("[data-stage]");
+  if (!sel) return;
+  const en = PIPE.entries.find(x => x.id === sel.dataset.stage);
+  await fetch("/api/pipeline", {method:"POST", body: JSON.stringify({id: en.id, title: en.title, url: en.url, deadline: en.deadline, stage: sel.value})});
+  en.stage = sel.value; render();
+});
+
+const COV_STATUS = {"ok":"r-good","partial":"r-warn","failed":"r-bad","blocked-by-site":"r-bad","not run yet":"r-warn","not covered":""};
+function coverageView() {
+  if (!COV) return `<div class="empty">Loading…</div>`;
+  if (COV.error || !COV.rows) return `<div class="empty">${esc(COV.error || "No coverage data")}</div>`;
+  const live = COV.rows.filter(x => x.covered);
+  const got = live.reduce((t, x) => t + (x.collected || 0), 0);
+  const withExp = live.filter(x => x.expected != null);
+  const head = `<p class="covsum">${live.length} sources collected, ${got.toLocaleString("en-US")} events this run · ${withExp.length} report their own total · ${COV.rows.length - live.length} known sources not covered · last run ${fmtDateTime(COV.last_run)}</p>`;
+  const num = v => v == null ? "not reported" : Number(v).toLocaleString("en-US");
+  const rows = COV.rows.map(x => {
+    const pct = x.pct != null ? Math.min(x.pct, 100) : null;
+    const coll = x.covered ? (x.collected == null ? "not run yet" : num(x.collected)) : "not collected";
+    const exp = x.covered ? num(x.expected) : "not reported";
+    const share = x.covered && x.pct != null ? `${x.pct}%<span class="mini"><i style="width:${pct}%"></i></span>` : (x.covered ? "not reported" : "—");
+    const err = x.error ? `<div class="ev"><b>Error:</b> ${esc(x.error)}</div>` : "";
+    const when = x.covered ? fmtDateTime(x.run_at) + (x.status !== "ok" && x.last_ok && x.last_ok !== x.run_at ? `<div class="k">last ok ${fmtDateTime(x.last_ok)}</div>` : "") : "Not collected";
+    return `<tr class="${x.covered ? "" : "nc"}"><td><b>${esc(x.source)}</b></td>
+      <td class="num">${coll} / ${exp}</td><td class="num">${share}</td>
+      <td><span class="chip ${COV_STATUS[x.status] ?? ""}">${esc(x.status)}</span></td>
+      <td class="num">${when}${x.secs != null ? `<div class="k">${x.secs}s</div>` : ""}</td>
+      <td class="note">${esc(x.note)}${err}</td></tr>`;
+  }).join("");
+  return head + `<div class="tblwrap"><table class="tbl"><thead><tr><th>Source</th><th>Collected / expected</th><th>Share</th><th>Status</th><th>Last run</th><th>Note</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function card(h) {
+  const dl = h.days_left;
+  const when = h.deadline ? `Closes <b>${fmtDate(h.deadline)}</b>${dl != null ? ` (${dl < 1 ? "today" : Math.round(dl) + " days"})` : ""}` : `Runs <b>${fmtDate(h.start)}</b>`;
+  const good = h.reasons.filter(r => r.pts >= 8 && ["theme","reach","prize"].includes(r.part)).map(r => `<span class="chip r-good">${esc(r.why)}</span>`);
+  const edge = h.reasons.filter(r => r.part === "edge" && r.pts >= 4).map(r => `<span class="chip r-new">${esc(r.why)}</span>`);
+  const bad = h.blockers.map(b => `<span class="chip r-bad">${BLOCK[b] || b}</span>`);
+  const warn = h.warnings.map(w => `<span class="chip r-warn">${WARN[w] || w}</span>`);
+  const extra = [];
+  if (h.is_new) extra.push(`<span class="chip r-new">New</span>`);
+  if ((h.evidence||[]).some(e => e.flag === "ai_allowed")) extra.push(`<span class="chip r-good">AI tools allowed</span>`);
+  if (h.page_read) extra.push(`<span class="chip">Rules page read</span>`);
+  else if (h.tier !== "blocked") extra.push(`<span class="chip r-warn" title="${h.page_blocked ? "Site returned a bot check or empty page" : "Not read yet"}">Rules not read: check eligibility</span>`);
+  const parts = [["Reach",h.parts.reach,30],["Theme",h.parts.theme,22],["Edge",h.parts.edge ?? 0,8],["Prize",h.parts.prize,15],["Timing",h.parts.timing,15],["Team",h.parts.team,10]];
+  const markBtn = (k, label) => `<button class="${h.mark===k?"on":""}" data-mark="${k}" data-id="${esc(h.id)}">${label}</button>`;
+  return `<div class="card ${h.mark==="dismissed"?"dim":""}">
+    <div class="score t-${h.tier}">${h.score}<small>${h.tier}</small></div>
+    <div>
+      <a class="title" href="${esc(h.url)}" target="_blank" rel="noopener">${esc(h.title)}</a>
+      <div class="meta"><span>${esc(h.organizer || h.source)} · ${h.source}</span>
+        <span><b>${h.format === "in-person" ? "In person" : h.format[0].toUpperCase() + h.format.slice(1)}</b>${h.location && h.format !== "online" ? " · " + esc(h.location) : ""}</span>
+        <span>${when}</span><span>${money(h.prize_usd)}</span></div>
+      <div class="reasons">${[...extra, ...bad, ...warn, ...edge, ...good].join("")}</div>
+      <details><summary>Why this score</summary>
+        <div class="bars">${parts.map(([n,v,m]) => `<span>${n}</span><span class="bar"><i style="width:${Math.max(0,v)/m*100}%"></i></span><span>${Math.round(v)}/${m}</span>`).join("")}</div>
+        <ul class="why">${h.reasons.map(r => `<li>${r.pts > 0 ? "+" : ""}${r.pts} ${esc(r.why)}</li>`).join("")}</ul>
+        ${(h.evidence||[]).map(e => `<div class="ev"><b>${FLAG[e.flag] || e.flag}:</b> ${esc(e.text)}</div>`).join("")}
+        ${h.themes && h.themes.length ? `<div class="ev"><b>Listed themes:</b> ${esc(h.themes.join(", "))}</div>` : ""}
+      </details>
+    </div>
+    <div class="actions">${markBtn("shortlist","★ Shortlist")}${markBtn("applied","Applied")}${markBtn("dismissed","Dismiss")}</div>
+  </div>`;
+}
+
+function showStatus(st) {
+  const bar = $("#statusbar");
+  if (st && st.running) {
+    bar.style.display = "block";
+    bar.textContent = `Running: ${st.phase} — ${(st.log || []).slice(-1)[0] || "starting"}`;
+    $("#refresh").disabled = true;
+    if (!pollT) pollT = setInterval(poll, 2500);
+  } else {
+    bar.style.display = "none"; $("#refresh").disabled = false;
+    if (pollT) { clearInterval(pollT); pollT = null; }
+  }
+}
+async function poll() {
+  const st = await (await fetch("/api/status")).json();
+  showStatus(st);
+  if (!st.running) load();
+}
+
+document.addEventListener("click", async e => {
+  const t = e.target.closest("[data-tab]");
+  if (t) { tab = t.dataset.tab; try { localStorage.setItem("radar.tab", tab); } catch (_) {} return render(); }
+  const m = e.target.closest("[data-mark]");
+  if (m) {
+    const h = DATA.find(x => x.id === m.dataset.id);
+    const status = h.mark === m.dataset.mark ? null : m.dataset.mark;
+    await fetch("/api/mark", {method:"POST", body: JSON.stringify({id: h.id, status})});
+    h.mark = status; render();
+  }
+});
+$("#refresh").onclick = async () => { await fetch("/api/refresh", {method:"POST"}); showStatus({running:true, phase:"starting"}); };
+["#q","#fmt","#src","#sort","#hideDismissed"].forEach(s => $(s).addEventListener("input", render));
+load();
+</script>
+</body>
+</html>

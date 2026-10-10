@@ -1,0 +1,19 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compiles
+        run: python -m py_compile radar.py radar/*.py
+      - name: Fresh checkout runs with no data and no pipeline.json
+        run: |
+          python radar.py top 3
+          python -c "import importlib.util as u; s=u.spec_from_file_location('app','radar.py'); m=u.module_from_spec(s); s.loader.exec_module(m); assert m.pipeline()['entries'] == []"
