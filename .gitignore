@@ -5,3 +5,4 @@ __pycache__/
 .claude/
 # Your own progress list. pipeline.example.json shows the shape.
 pipeline.json
+export/

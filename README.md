@@ -111,6 +111,7 @@ Changes apply on the next page load, no rescrape needed.
 ```bash
 python3 radar.py scrape       # one full run in the terminal
 python3 radar.py top 20       # best 20 non-blocked matches
+python3 export.py             # write export/*.csv and export/hackathons.json
 ```
 
 ## License
