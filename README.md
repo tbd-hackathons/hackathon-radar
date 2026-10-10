@@ -79,7 +79,10 @@ Changes apply on the next page load, no rescrape needed.
 
 - Eligibility flags come from text patterns. A "Go" means "worth opening the rules", not "eligible".
 - Prize USD uses a fixed approximate FX table for ranking only.
-- One request per second per site. No logins, no bot-protection bypass.
+- One request per second per site. No logins, no bot-protection bypass. Requests say who they are:
+  `HackathonRadar/1.0 (+https://github.com/tbd-hackathons/hackathon-radar)` (override with `RADAR_USER_AGENT`).
+- **DoraHacks** answers that honest user agent with HTTP 405 (checked 10 Oct 2026), so it is not collected
+  unless the site allows it. The adapter stays in place; the Coverage tab shows it as failed.
 - Low counts are real, not bugs (checked 10 Oct 2026): lablab.ai embeds ~140 events but only 3 have not
   ended; ETHGlobal embeds ~340 events (meetups, summits, past) with 1 future hackathon; Taikai has 8 open
   challenges of 278 (the old page read only saw the first 20 and missed one, now fixed via its API).

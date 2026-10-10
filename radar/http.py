@@ -3,14 +3,16 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 
-UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/128 Safari/537.36 HackathonRadar/1.0")
+# Say who we are, honestly, with a link a site owner can use to see what this is or ask us to stop.
+UA = os.environ.get("RADAR_USER_AGENT",
+                    "HackathonRadar/1.0 (+https://github.com/tbd-hackathons/hackathon-radar)")
 MIN_GAP = 1.0  # seconds between two requests to the same site
 SLOW = {"devpost.com": 3.0, "aicrowd.com": 10.0}  # rate-limit harder; aicrowd robots.txt Crawl-delay: 10
 
