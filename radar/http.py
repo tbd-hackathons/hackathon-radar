@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import gzip
+import http.client
 import json
 import os
 import threading
@@ -27,6 +28,40 @@ SLOW = {"devpost.com": 3.0, "aicrowd.com": 10.0}  # rate-limit harder; aicrowd r
 
 _last_hit: dict = {}
 _lock = threading.Lock()
+
+# Optional: bind outgoing sockets to one local IP. Some networks (a VPN exit node, a
+# hotspot) send our traffic out through an IP a site blocks as "anonymous". Binding to
+# a physical interface's address routes around it without lying in the user agent.
+#   RADAR_SOURCE_IP=$(ipconfig getifaddr en0) python3 radar.py scrape   # macOS
+SOURCE_IP = os.environ.get("RADAR_SOURCE_IP") or None
+
+
+def _build_opener():
+    """A urllib opener that binds to SOURCE_IP, or None to use the default."""
+    if not SOURCE_IP:
+        return None
+
+    class _HTTP(http.client.HTTPConnection):
+        def __init__(self, *a, **kw):
+            kw.setdefault("source_address", (SOURCE_IP, 0))
+            super().__init__(*a, **kw)
+
+    class _HTTPS(http.client.HTTPSConnection):
+        def __init__(self, *a, **kw):
+            kw.setdefault("source_address", (SOURCE_IP, 0))
+            super().__init__(*a, **kw)
+
+    class _Handler(urllib.request.HTTPHandler, urllib.request.HTTPSHandler):
+        def http_open(self, req):
+            return self.do_open(_HTTP, req)
+
+        def https_open(self, req):
+            return self.do_open(_HTTPS, req)
+
+    return urllib.request.build_opener(_Handler)
+
+
+_OPENER = _build_opener()
 
 
 def _wait_turn(host: str) -> None:
@@ -54,7 +89,8 @@ def fetch(url: str, *, data=None, headers=None, timeout=30, retries=2) -> str:
         _wait_turn(host)
         try:
             req = urllib.request.Request(url, data=body, headers=hdrs)
-            with urllib.request.urlopen(req, timeout=timeout) as r:
+            op = _OPENER.open if _OPENER else urllib.request.urlopen
+            with op(req, timeout=timeout) as r:
                 raw = r.read()
                 if r.headers.get("Content-Encoding") == "gzip":
                     raw = gzip.decompress(raw)

@@ -183,7 +183,7 @@ def score(h: dict, profile: dict, enrich: dict | None = None) -> dict:
         warnings.append("paid_entry")
     if fl.get("india_platform") and home != "India":
         warnings.append("india_platform"); reach = max(0, reach - 6)
-        add("reach", -6, "Hosted on Unstop (India): check that non-Indian winners get paid")
+        add("reach", -6, "Hosted on an India platform: check that non-Indian winners get paid")
     if fl.get("ai_allowed"):
         add("team", 0, "Rules allow AI tools")
     if fl.get("home_mentioned"):

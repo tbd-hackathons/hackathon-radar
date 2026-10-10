@@ -698,11 +698,44 @@ def luma():
     return out
 
 
+# ---------------------------------------------------------------- HackerEarth
+# Its own JSON feed behind the Compete page. The site's filters are client-side, so
+# everything comes back and the adapter keeps open hackathons. This host answers a
+# datacenter/VPN IP with a 403 "ANONYMOUS IP" wall; from a normal connection it serves
+# our honest user agent (see RADAR_SOURCE_IP in http.py).
+HACKEREARTH = "https://www.hackerearth.com/api/community/challenges/compete/"
+
+
+def hackerearth():
+    d = fetch_json(HACKEREARTH)
+    rows = d.get("data") or []
+    out, now = Batch(note="expected = open hackathons in the Compete feed"), _utcnow()
+    for c in rows:
+        if (c.get("type") or "").lower() != "hackathon":
+            continue
+        end = iso(c.get("end"))
+        if end and end < now:
+            continue  # already closed
+        url = c.get("url") or ""
+        if url and not url.startswith("http"):
+            url = "https://www.hackerearth.com" + url
+        out.append(record(
+            "hackerearth", c.get("slug") or c.get("title"), c.get("title"), url,
+            organizer=c.get("company_name"), start=iso(c.get("start")), end=end, deadline=end,
+            format="online", location="Online", country="India",
+            themes=["hackathon"], participants=c.get("subscription_count"),
+            team_min=c.get("min_team_size"), team_max=c.get("max_team_size"),
+            flags={"india_platform": True},
+        ))
+    out.expected = len(out)
+    return out
+
+
 SOURCES = {
     "devpost": devpost, "devfolio": devfolio, "unstop": unstop, "mlh": mlh,
     "lablab": lablab, "ethglobal": ethglobal, "taikai": taikai, "hackclub": hackclub,
     "dorahacks": dorahacks, "zindi": zindi, "drivendata": drivendata, "aicrowd": aicrowd,
-    "hackster": hackster, "kaggle": kaggle, "luma": luma,
+    "hackster": hackster, "kaggle": kaggle, "luma": luma, "hackerearth": hackerearth,
 }
 
 # Shown on the Coverage page next to each source's numbers.
@@ -722,11 +755,11 @@ SOURCE_NOTES = {
     "hackster": "Hypernova page data; hardware contests. Site gives no total. Contest pages return 403, so rules are not read.",
     "kaggle": "Own gRPC-web JSON endpoint, no account needed. Only competitions still open are kept.",
     "luma": "Discover search for 'hackathon', no key needed. Up to ~50 results; the site gives no total.",
+    "hackerearth": "Own Compete feed. Filters are client-side, so all challenges are fetched and open hackathons kept. This host blocks datacenter/VPN IPs as 'ANONYMOUS IP'; set RADAR_SOURCE_IP if your traffic exits through one.",
 }
 
 # Places we know list hackathons but do not collect from, and why.
 NOT_COVERED = [
-    {"source": "hackerearth", "reason": "Returned 403 to plain and to browser user agents (checked 10 Oct 2026); it needs a real browser engine, and the radar stays dependency-free, so it is not collected."},
     {"source": "eventbrite", "reason": "The search API needs an OAuth token we do not hold; the public listing returns 405 (checked 10 Oct 2026)."},
     {"source": "sponsor-run challenges", "reason": "Google, AWS, Microsoft, Meta etc. run their own pages; no shared feed. Check by hand."},
 ]
