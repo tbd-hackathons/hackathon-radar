@@ -130,7 +130,10 @@ def fetch_headers(url: str, *, data=None, headers=None, timeout=30, retries=2):
     host = ".".join(urllib.parse.urlparse(url).netloc.split(".")[-2:])  # *.devpost.com share one slot
     body = None
     hdrs = {"User-Agent": HOST_UA.get(host, UA), "Accept-Encoding": "gzip",
-            "Accept": "application/json, text/html;q=0.9, */*;q=0.8"}
+            # Keep this simple. Devpost's WAF answers 403 to any Accept that carries q-values
+            # (its subdomains refused our rules pages for exactly that reason), and */* still
+            # lets every JSON API return JSON.
+            "Accept": "*/*"}
     if data is not None:
         body = json.dumps(data).encode()
         hdrs["Content-Type"] = "application/json"
