@@ -20,7 +20,13 @@ RULES = {
         r"|must be (a |an )?(currently )?(enrolled|registered|full[- ]time) (student|in )"
         r"|open to (all )?(university |college |undergraduate |engineering )students(?! and)"
         r"|open to (current |enrolled )?students\b(?! and)", re.I),
-    "high_school": re.compile(r"high[- ]school(ers)? only|for high school students|ages? 13\s*(-|–|to)\s*18", re.I),
+    # "only" is the unambiguous form, but pages also write "Open to high school students
+    # worldwide (ages ~13-19)", which none of the narrow patterns caught — so EurekaDev ranked
+    # as a Go match for a non-student adult. Cover the open-to phrasing and the age range.
+    "high_school": re.compile(
+        r"high[- ]school(ers)?\s+only|for high[- ]school students"
+        r"|open to[^.\n]{0,40}high[- ]school|eligib\w*[^.\n]{0,60}high[- ]school"
+        r"|ages?\s*~?\s*1[2-5]\s*(-|–|to)\s*1[7-9]", re.I),
     "invite_only": re.compile(r"open only to members of|must be a member of the [^.]{0,40}program", re.I),
     "women_only": re.compile(r"(women|female)[- ]only|only (open to )?(women|females)", re.I),
     "ai_banned": re.compile(
