@@ -11,7 +11,7 @@ No dependencies: Python 3.9+ standard library and SQLite (`data/radar.db`).
 
 ## How it works
 
-1. **Collect** from 17 sources in parallel. Each adapter reads the source's own JSON API or the data embedded in its page:
+1. **Collect** from 16 sources in parallel. Each adapter reads the source's own JSON API or the data embedded in its page:
 
    | Source | Method | What it covers |
    |---|---|---|
@@ -23,7 +23,6 @@ No dependencies: Python 3.9+ standard library and SQLite (`data/radar.db`).
    | ETHGlobal | Next.js flight data | web3 hackathons |
    | Taikai | public GraphQL API (`api.taikai.network`), open challenges | EU/LatAm innovation challenges |
    | Hack Club | public API | high-school events (blocked for us by default) |
-   | DoraHacks | the site's own list API (`/api/v1/hub/hackathons`), ongoing + upcoming; this host only, requests use a browser user agent (see Limits) | web3 + AI, big online prize pools |
    | Zindi | public API (`api.zindi.world`), open challenges + rules text | data/ML competitions, many Africa-only |
    | DrivenData | server-rendered list (`data-*` attributes) | data/ML competitions for social impact |
    | AIcrowd | server-rendered cards, running + starting soon, 10 s between requests (robots.txt Crawl-delay) | data/ML research challenges |
@@ -86,20 +85,17 @@ Changes apply on the next page load, no rescrape needed.
 - One request per second per site. No logins. Requests say who they are:
   `HackathonRadar/1.0 (+https://github.com/tbd-hackathons/hackathon-radar)` (override with `RADAR_USER_AGENT`).
 - **HackerEarth and Eventbrite reject datacenter/VPN IPs** with 403/405 ("ANONYMOUS IP"). A browser from
-  the same IP gets the same wall, so it is a network-path problem, not a browser or header one. The radar now
-  handles this itself: on the first such refusal it finds a physical interface, binds outgoing sockets to it
-  and retries — no setting and no user-agent lie. Override the address, or pin it, with
-  `RADAR_SOURCE_IP=$(ipconfig getifaddr en0)`. If detection finds nothing, that source is reported
-  blocked-by-site and every other source is unaffected.
+  the same IP gets the same wall. The radar takes a refusal as the site's answer: it does not retry from
+  another address, and that source is reported blocked-by-site while every other source carries on. If your
+  own traffic leaves through a VPN, you can choose your own connection instead with
+  `RADAR_SOURCE_IP=$(ipconfig getifaddr en0)`; it is off unless you set it.
 - **Eventbrite has two ways in**, so one breaking does not take it down: the directory search API (a CSRF
   cookie from the listing page, no user token) and, failing that, the results the listing page ships inside
   `window.__SERVER_DATA__`. Its search is fuzzy — "hackathon" also returns workshops, talks and meetups — so
   results are filtered to events whose title or summary actually reads as a hackathon. If neither route yields
   anything readable, the source reports a failure instead of a quiet zero.
-- **One disclosed exception to that user agent: DoraHacks.** Its API answers our honest user agent with
-  HTTP 405 and the same endpoint with a browser user agent with the public data (checked 10 Oct 2026). So
-  `radar/http.py` carries a `HOST_UA` map naming that host and nothing else — the exception is visible in
-  the code, not silent. Remove the entry and the Coverage tab shows DoraHacks as failed again.
+- **No exceptions to that user agent.** Every request says who it is. A site that refuses it is left out
+  rather than disguised: DoraHacks answers our user agent with HTTP 405, so it is not a source.
 - Low counts are real, not bugs (checked 10 Oct 2026): lablab.ai embeds ~140 events but only 3 have not
   ended; ETHGlobal embeds ~340 events (meetups, summits, past) with 1 future hackathon; Taikai has 8 open
   challenges of 278 (the old page read only saw the first 20 and missed one, now fixed via its API).

@@ -398,52 +398,6 @@ def hackclub():
     return out
 
 
-# ---------------------------------------------------------------- DoraHacks
-# The site's own list API (the Nuxt app calls it at dorahacks.io/api/v1/hub/).
-DORA = "https://dorahacks.io/api/v1/hub/hackathons"
-
-
-def _epoch(v):
-    return iso(datetime.fromtimestamp(v, timezone.utc)) if v else None
-
-
-def dorahacks():
-    out, seen, expected = Batch(), set(), 0
-    for status in ("ongoing", "upcoming"):
-        page = 1
-        while page <= 10:
-            d = fetch_json(f"{DORA}?page={page}&page_size=50&status={status}")
-            if page == 1:
-                expected += d.get("count") or 0
-            for h in d.get("results") or []:
-                if h["id"] in seen:
-                    continue
-                seen.add(h["id"])
-                vf = (h.get("venue_form") or "").lower()
-                fmt = {"virtual": "online", "irl": "in-person", "hybrid": "hybrid"}.get(vf, "unknown")
-                tok = (h.get("bonus_token") or "").upper()
-                amt = h.get("bonus_price") or 0
-                usd = amt * FX[tok] if amt and tok in FX else None
-                tags = [t.strip() for t in f"{h.get('ecosystem') or ''},{h.get('tags') or ''}".split(",") if t.strip()]
-                out.append(record(
-                    "dorahacks", h["id"], h["title"], f"https://dorahacks.io/hackathon/{h.get('uname') or h['id']}/detail",
-                    organizer=(h.get("owner") or {}).get("name"), start=_epoch(h.get("timeline_start")),
-                    end=_epoch(h.get("timeline_end")), deadline=_epoch(h.get("timeline_end")),
-                    format=fmt, location="Online" if fmt == "online" else
-                    ", ".join(x for x in (h.get("venue_name"), h.get("venue_address")) if x) or None,
-                    prize_usd=usd, prize_text=f"{tok} {amt:,.0f}" if amt else None,
-                    themes=list(dict.fromkeys(tags))[:15], participants=h.get("hackers_count"),
-                    image=h.get("image_url"),
-                    # visibility 1 = password needed to submit, 2 = private (site's own enum)
-                    flags={"invite_only": bool(h.get("visibility"))},
-                ))
-            if not d.get("next"):
-                break
-            page += 1
-    out.expected = expected
-    return out
-
-
 # ---------------------------------------------------------------- Zindi
 # Public API behind zindi.world (zindi.africa redirects there). Listing + one
 # detail call per open challenge for its rules text (who may enter).
@@ -862,7 +816,7 @@ def eventbrite():
 SOURCES = {
     "devpost": devpost, "devfolio": devfolio, "unstop": unstop, "mlh": mlh,
     "lablab": lablab, "ethglobal": ethglobal, "taikai": taikai, "hackclub": hackclub,
-    "dorahacks": dorahacks, "zindi": zindi, "drivendata": drivendata, "aicrowd": aicrowd,
+    "zindi": zindi, "drivendata": drivendata, "aicrowd": aicrowd,
     "hackster": hackster, "kaggle": kaggle, "luma": luma, "hackerearth": hackerearth,
     "eventbrite": eventbrite,
 }
@@ -877,14 +831,13 @@ SOURCE_NOTES = {
     "ethglobal": "Page embeds all ~340 events (meetups, summits, past); only future hackathons are kept.",
     "taikai": "Public GraphQL API, open challenges (the page itself only renders the first 20).",
     "hackclub": "Public API, upcoming high-school events. No total.",
-    "dorahacks": "Site's own list API, ongoing + upcoming.",
     "zindi": "Public API, open challenges; rules read for eligibility. Many are Africa-only.",
     "drivendata": "Server-rendered list; includes long-running practice competitions.",
     "aicrowd": "Server-rendered list, running + starting soon. Crawl-delay 10 s respected.",
     "hackster": "Hypernova page data; hardware contests. Site gives no total. Contest pages return 403, so rules are not read.",
     "kaggle": "Own gRPC-web JSON endpoint, no account needed. Only competitions still open are kept.",
     "luma": "Discover search for 'hackathon', no key needed. Up to ~50 results; the site gives no total.",
-    "hackerearth": "Own Compete feed. Filters are client-side, so all challenges are fetched and open hackathons kept. This host blocks datacenter/VPN IPs as 'ANONYMOUS IP'; set RADAR_SOURCE_IP if your traffic exits through one.",
+    "hackerearth": "Own Compete feed. Filters are client-side, so all challenges are fetched and open hackathons kept. This host blocks datacenter/VPN IPs as 'ANONYMOUS IP'; set RADAR_SOURCE_IP to your own connection if your traffic leaves through a VPN.",
     "eventbrite": "Directory search API with a CSRF cookie taken from the listing page (no user token). The search is fuzzy, so results are filtered to hackathon-named events; only the first pages are read.",
 }
 

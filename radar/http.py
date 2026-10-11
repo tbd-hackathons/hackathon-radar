@@ -5,9 +5,6 @@ import gzip
 import http.client
 import json
 import os
-import re
-import subprocess
-import sys
 import threading
 import time
 import urllib.error
@@ -18,14 +15,6 @@ import urllib.request
 UA = os.environ.get("RADAR_USER_AGENT",
                     "HackathonRadar/1.0 (+https://github.com/tbd-hackathons/hackathon-radar)")
 
-# Per-host exceptions to the honest user agent above. Only for sites that answer
-# our honest UA with a bot wall (HTTP 405/403) yet serve the very same public data
-# to a browser UA. Named per host so the exception is visible, not silent; the
-# README "Limits" section discloses which hosts are listed and why.
-HOST_UA = {
-    "dorahacks.io": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128 Safari/537.36",
-}
 MIN_GAP = 1.0  # seconds between two requests to the same site
 SLOW = {"devpost.com": 3.0, "aicrowd.com": 10.0}  # rate-limit harder; aicrowd robots.txt Crawl-delay: 10
 
@@ -64,53 +53,7 @@ def _build_opener(ip):
     return urllib.request.build_opener(_Handler)
 
 
-def _auto_source_ip():
-    """Address of a physical interface, for routing around a VPN exit a site blocks.
-
-    Best effort: no dependency, no privileges, no change unless a request is refused.
-    None means "no idea", and the caller then behaves exactly as it did before.
-    """
-    if sys.platform == "darwin":
-        for iface in ("en0", "en1", "en2"):
-            try:
-                r = subprocess.run(["ipconfig", "getifaddr", iface],
-                                   capture_output=True, text=True, timeout=5)
-            except Exception:
-                continue
-            if r.returncode == 0 and (r.stdout or "").strip():
-                return r.stdout.strip()
-        return None
-    try:  # Linux and friends
-        r = subprocess.run(["ip", "route", "get", "1.1.1.1"],
-                           capture_output=True, text=True, timeout=5)
-        m = re.search(r"\bsrc\s+(\d+\.\d+\.\d+\.\d+)", r.stdout or "")
-        return m.group(1) if m else None
-    except Exception:
-        return None
-
-
 _OPENER = _build_opener(SOURCE_IP)
-_ACTIVE = {"opener": _OPENER}
-_auto_lock = threading.Lock()
-_auto_state = {"done": False}
-
-
-def _reroute_around_block() -> bool:
-    """After a 403/405, bind to the physical interface and keep using it. Once only.
-
-    This is what makes a host that rejects a VPN/datacenter IP work with no env var
-    and no user-agent lie. If detection finds nothing, nothing changes.
-    """
-    with _auto_lock:
-        if _auto_state["done"]:
-            return False
-        _auto_state["done"] = True
-        ip = _auto_source_ip()
-        if not ip:
-            return False
-        _ACTIVE["opener"] = _build_opener(ip)
-        print(f"http: a host refused our IP; routing via {ip} from now on", flush=True)
-        return True
 
 
 def _wait_turn(host: str) -> None:
@@ -129,7 +72,7 @@ def fetch_headers(url: str, *, data=None, headers=None, timeout=30, retries=2):
     can read Set-Cookie (e.g. Eventbrite's CSRF token, which is not in the page body)."""
     host = ".".join(urllib.parse.urlparse(url).netloc.split(".")[-2:])  # *.devpost.com share one slot
     body = None
-    hdrs = {"User-Agent": HOST_UA.get(host, UA), "Accept-Encoding": "gzip",
+    hdrs = {"User-Agent": UA, "Accept-Encoding": "gzip",
             # Keep this simple. Devpost's WAF answers 403 to any Accept that carries q-values
             # (its subdomains refused our rules pages for exactly that reason), and */* still
             # lets every JSON API return JSON.
@@ -143,7 +86,7 @@ def fetch_headers(url: str, *, data=None, headers=None, timeout=30, retries=2):
         _wait_turn(host)
         try:
             req = urllib.request.Request(url, data=body, headers=hdrs)
-            op = _ACTIVE["opener"].open if _ACTIVE["opener"] else urllib.request.urlopen
+            op = _OPENER.open if _OPENER else urllib.request.urlopen
             with op(req, timeout=timeout) as r:
                 raw = r.read()
                 if r.headers.get("Content-Encoding") == "gzip":
@@ -155,17 +98,9 @@ def fetch_headers(url: str, *, data=None, headers=None, timeout=30, retries=2):
                 return raw.decode("utf-8", "replace"), out
         except urllib.error.HTTPError as e:
             last = e
-            # A 403/405 is often an IP wall rather than a bad request. Reroute, then retry if
-            # the route really did change under us. Compare openers rather than trusting a
-            # flag: another thread may have switched routes while this request was in flight,
-            # in which case this one still went out the old way and deserves its retry.
-            if e.code in (403, 405) and SOURCE_IP is None:
-                _reroute_around_block()
-                now = _ACTIVE["opener"].open if _ACTIVE["opener"] else urllib.request.urlopen
-                if now is not op:
-                    continue
-            if e.code in (400, 401, 403, 404, 410):
-                break  # retrying will not help
+            # A refusal is the site's answer. Respect it: no retry, no other route, no other identity.
+            if e.code in (400, 401, 403, 404, 405, 410):
+                break
         except Exception as e:  # timeouts, resets
             last = e
         time.sleep(2 ** attempt)
